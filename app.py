@@ -64,12 +64,15 @@ class CalculatorHandler(BaseHTTPRequestHandler):
             raise ApiError(400, "INVALID_BODY", "请求长度不正确。") from error
         if length < 0:
             raise ApiError(400, "INVALID_BODY", "请求长度不正确。")
+        # Read only a bounded body before replying so normal oversized requests
+        # do not lose their error response to an abrupt socket reset.
+        raw_body = self.rfile.read(min(length, MAX_BODY_BYTES + 1))
         if length > MAX_BODY_BYTES:
             raise ApiError(413, "BODY_TOO_LARGE", "请求内容过大。")
         if self.headers.get_content_type() != "application/json":
             raise ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "请使用 JSON 格式提交表达式。")
         try:
-            body = json.loads(self.rfile.read(length).decode("utf-8"))
+            body = json.loads(raw_body.decode("utf-8"))
         except (UnicodeDecodeError, ValueError, RecursionError) as error:
             raise ApiError(400, "INVALID_JSON", "JSON 格式不正确。") from error
         if not isinstance(body, dict):
