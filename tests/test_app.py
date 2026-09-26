@@ -204,7 +204,7 @@ class ApiTests(unittest.TestCase):
 
     def test_original_database_is_preserved(self):
         self.stop_server()
-        with sqlite3.connect(self.database_path) as database:
+        with storage.connect(self.database_path) as database:
             database.execute(
                 "INSERT INTO calculation_history VALUES (99, '5*8', '40', "
                 "'2026-09-23T12:00:00+00:00')"
