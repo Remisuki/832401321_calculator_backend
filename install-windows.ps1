@@ -1,7 +1,9 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$PublicIp,
-    [string]$PythonExe = 'C:\Python313\python.exe'
+    [string]$PythonExe = 'C:\Python313\python.exe',
+    [ValidateRange(1, 65535)]
+    [int]$Port = 80
 )
 
 # First installation only. Run in Administrator Windows PowerShell 5.1+.
@@ -30,9 +32,10 @@ if (Test-Path -LiteralPath $Root) {
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     throw "Scheduled task $TaskName already exists. No changes made."
 }
-if (Get-NetTCPConnection -LocalPort 80 -State Listen -ErrorAction SilentlyContinue) {
-    throw 'Port 80 is already in use. Do not stop other services without checking.'
+if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) {
+    throw "Port $Port is already in use. Choose another port with -Port; leave existing services running."
 }
+$PublicOrigin = if ($Port -eq 80) { "http://$PublicIp" } else { "http://${PublicIp}:$Port" }
 
 Write-Host '1/7 Preparing folders and downloading the two repositories...'
 New-Item -ItemType Directory -Path $Root, "$Root\downloads", "$Root\data", "$Root\logs" | Out-Null
@@ -57,6 +60,10 @@ foreach ($relative in @('backend\windows_server.py', 'backend\wsgi.py',
 }
 
 Write-Host '2/7 Creating a private Python environment and installing Windows dependencies...'
+# Check the entry point before installing: both updated files must be uploaded.
+if ($Port -ne 80 -and -not (Select-String -LiteralPath "$Root\backend\windows_server.py" -SimpleMatch 'WINDOWS_HTTP_PORT' -Quiet)) {
+    throw 'Upload the updated windows_server.py to the backend repository. Keep this partial installation for diagnosis; do not rerun blindly.'
+}
 & $PythonExe -m venv "$Root\venv"
 if ($LASTEXITCODE -ne 0) { throw 'Creating the Python environment failed.' }
 & $Python -m pip install --disable-pip-version-check `
@@ -65,7 +72,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Installing Python dependencies failed.' }
 
 Write-Host '3/7 Saving the public origin and configuring file permissions...'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
-$settings = @{ public_origin = "http://$PublicIp" } | ConvertTo-Json
+$settings = @{ public_origin = $PublicOrigin; port = $Port } | ConvertTo-Json
 [IO.File]::WriteAllText("$Root\settings.json", $settings, $utf8)
 # LOCAL SERVICE can read the application and write only the data/log folders.
 & icacls.exe $Root /grant '*S-1-5-19:(OI)(CI)RX'
@@ -83,17 +90,18 @@ Push-Location "$Root\backend"
 try {
     & $Python -m unittest discover -s tests -v
     if ($LASTEXITCODE -ne 0) { throw 'Repository tests failed. Deployment stopped.' }
-    & $Python -c "import windows_server; a=windows_server.create_app(); c=a.test_client(); assert c.get('/').status_code==200; assert c.get('/api/health').json=={'status':'ok'}; assert c.get('/config.js').status_code==200; assert c.get('/settings.json').status_code==404; print('Windows entry-point checks passed.')"
+    & $Python -c "import sys,windows_server; a=windows_server.create_app(); assert a.config.get('WINDOWS_HTTP_PORT',80)==int(sys.argv[1]); c=a.test_client(); assert c.get('/').status_code==200; assert c.get('/api/health').json=={'status':'ok'}; assert c.get('/config.js').status_code==200; assert c.get('/settings.json').status_code==404; print('Windows entry-point checks passed.')" $Port
     if ($LASTEXITCODE -ne 0) { throw 'Windows entry-point checks failed.' }
 } finally {
     Pop-Location
 }
 
 Write-Host '5/7 Allowing HTTP through Windows Firewall...'
-if (-not (Get-NetFirewallRule -Name 'CalculatorHomework-HTTP' -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -Name 'CalculatorHomework-HTTP' `
-        -DisplayName 'Calculator homework HTTP (TCP 80)' `
-        -Direction Inbound -Protocol TCP -LocalPort 80 `
+$FirewallRuleName = "CalculatorHomework-HTTP-$Port"
+if (-not (Get-NetFirewallRule -Name $FirewallRuleName -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -Name $FirewallRuleName `
+        -DisplayName "Calculator homework HTTP (TCP $Port)" `
+        -Direction Inbound -Protocol TCP -LocalPort $Port `
         -Action Allow -Profile Any | Out-Null
 }
 
@@ -119,7 +127,7 @@ Write-Host '7/7 Waiting for the local health check...'
 $healthy = $false
 for ($attempt = 0; $attempt -lt 20; $attempt++) {
     try {
-        $health = Invoke-RestMethod -Uri 'http://127.0.0.1/api/health' -TimeoutSec 2
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2
         if ($health.status -eq 'ok') { $healthy = $true; break }
     } catch { }
     Start-Sleep -Seconds 2
@@ -129,9 +137,9 @@ if (-not $healthy) {
 }
 Write-Host ''
 Write-Host 'Local installation checks passed. Now test public access from another device.'
-Write-Host "Website: http://$PublicIp/"
-Write-Host "Health:  http://$PublicIp/api/health"
+Write-Host "Website: $PublicOrigin/"
+Write-Host "Health:  $PublicOrigin/api/health"
 Write-Host "Database: $Root\data\calculator.db"
 Write-Host "Logs: $Root\logs\server.log"
-Write-Host 'Also allow TCP 80 in the Tencent Cloud firewall/security group.'
+Write-Host "Also allow TCP $Port in the Tencent Cloud firewall/security group."
 Write-Host 'Do not run this first-install script again to restart the service.'

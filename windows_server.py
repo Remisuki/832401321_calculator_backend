@@ -16,12 +16,16 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def create_app():
     settings = json.loads((ROOT / "settings.json").read_text(encoding="utf-8-sig"))
+    port = settings.get("port", 80)
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("settings.json port must be an integer between 1 and 65535")
     origin = settings["public_origin"].rstrip("/")
     app = create_api_app({
         "DATABASE_URL": ROOT / "data" / "calculator.db",
         "STORAGE": storage,
         "ALLOWED_ORIGINS": origin,
     })
+    app.config["WINDOWS_HTTP_PORT"] = port
     frontend = ROOT / "frontend"
 
     @app.get("/")
@@ -58,7 +62,7 @@ if __name__ == "__main__":
     )
     try:
         application = create_app()
-        serve(application, host="0.0.0.0", port=80, threads=4,
+        serve(application, host="0.0.0.0", port=application.config["WINDOWS_HTTP_PORT"], threads=4,
               channel_timeout=30, max_request_body_size=16384)
     except Exception:
         logging.exception("Server startup or runtime failed")
