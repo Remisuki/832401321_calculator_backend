@@ -1,89 +1,150 @@
-# 算页计算器后端
+# 算页计算器 · Backend
 
-软件工程第一次作业后端。服务接收表达式，完成校验、安全解析和 Decimal 运算，将成功结果保存到 SQLite，并提供历史分页查询和按 ID 删除接口。前端不计算最终结果。
+使用 Python 实现的计算器后端，提供表达式计算、历史持久化、分页查询和指定记录删除接口。支持本地运行及 Windows Server 部署。
 
-- 在线演示：<http://193.112.23.200:8080/>
-- 健康检查：<http://193.112.23.200:8080/api/health>
-- 前端仓库：<https://github.com/Remisuki/832401321_calculator_frontend>
-- 文档：[API.md](API.md) · [codestyle.md](codestyle.md)
-- 作业要求：<https://bbs.csdn.net/topics/620530837>
+[在线演示](http://193.112.23.200:8080/) · [健康检查](http://193.112.23.200:8080/api/health) · [前端仓库](https://github.com/Remisuki/832401321_calculator_frontend) · [接口文档](API.md) · [代码规范](codestyle.md)
 
-## 当前运行环境
+## 项目简介
 
-| 项目 | 当前方案 |
+本项目为软件工程课程“前后端分离计算器系统”作业的后端实现。前端通过 HTTP/JSON 提交表达式，后端负责校验、解析、计算和数据库操作，返回统一的结果与错误信息。
+
+作业要求：[First Assignment — Front-End and Back-End Separation Calculator System](https://bbs.csdn.net/topics/620530837)。
+
+## 功能
+
+- 加、减、乘、除，以及括号和运算优先级。
+- 十进制小数、一元正号与负号。
+- 非法表达式、除零、长度与数值范围校验。
+- 成功计算记录的数据库持久化。
+- 按 ID 倒序分页查询历史，按指定 ID 删除记录。
+- 浏览器来源校验、JSON 错误响应和服务日志。
+
+表达式采用递归下降解析，不使用 `eval`、`exec` 或等效的任意代码执行方式。
+
+## 技术栈与架构
+
+| 模块 | 技术 |
 |---|---|
-| 服务器 | 腾讯云 Windows Server |
-| Python | 3.13；安装脚本兼容 3.12 / 3.13 |
-| HTTP 服务 | Flask 3.1.3 + Waitress 3.0.2 |
-| 数据库 | SQLite，`C:\Calculator\data\calculator.db` |
-| 监听地址 | `0.0.0.0:8080` |
-| 公网入口 | `http://193.112.23.200:8080/` |
-| 后台运行 | Windows 计划任务 `CalculatorHomework`，LOCAL SERVICE 账号 |
-
-当前入口不使用 Render、Neon 或 Gunicorn。`postgres_storage.py`、`requirements-cloud.txt` 和旧 `DEPLOY.md` 保留了此前可选平台方案，不用于本次 Windows 部署。由于 `wsgi.py` 仍导入 PostgreSQL 适配器，Windows 安装依赖中保留 `psycopg[binary]==3.3.6`；实际存储通过 `STORAGE=storage` 切换到 SQLite，不需要 PostgreSQL 账号或连接串。
-
-## 功能与目录
-
-支持 `+ - * /`、`× ÷`、括号、一元正负号及十进制小数。采用递归下降解析，不使用 `eval`、`exec` 或任意代码执行。最大表达式长度为 200；递归深度阈值为 40；数值绝对值上限为 `1e100`；Decimal 精度为 28 位有效数字，不是无限精度计算。
+| 编程语言 | Python |
+| 公网 API | Flask 3.1.3 |
+| Windows HTTP 服务 | Waitress 3.0.2 |
+| 计算 | Decimal + 递归下降解析 |
+| 当前数据库 | SQLite |
+| 测试 | unittest |
+| 后台运行 | Windows 计划任务 |
 
 ```text
-calculator.py          词法分析、优先级、一元运算和 Decimal 计算
-storage.py             SQLite 初始化、事务、历史增删查
-wsgi.py                Flask API、输入和来源校验、错误响应
-windows_server.py      当前 Windows 入口、静态页面、同源配置、日志
-install-windows.ps1    首次安装：下载、依赖、权限、测试、防火墙、计划任务
-app.py / start.bat     本地学习用 HTTP 服务
-postgres_storage.py    旧方案的 PostgreSQL 适配器
-tests/                 计算、HTTP 和存储适配器测试
-API.md / codestyle.md  接口说明与代码规范
+前端浏览器
+    │ HTTP / JSON
+    ▼
+Flask API（wsgi.py）
+    ├── calculator.py：校验、解析与计算
+    └── storage.py：事务与历史管理
+            │
+            ▼
+          SQLite
 ```
 
-## 本地运行
+`windows_server.py` 为 Windows 部署入口，复用 Flask API，并提供前端静态资源和同源配置。`app.py` 为使用标准库实现的本地运行入口。
 
-本地教学模式使用 Python 3.9+ 标准库，无需安装 Flask：
+## 目录结构
+
+```text
+.
+├── app.py                  # 本地 HTTP 服务
+├── calculator.py           # 表达式解析与计算
+├── storage.py              # SQLite 存储
+├── wsgi.py                 # Flask API 应用工厂
+├── windows_server.py       # Windows 部署入口
+├── install-windows.ps1     # Windows 首次安装脚本
+├── postgres_storage.py     # 可选 PostgreSQL 适配器
+├── tests/
+│   ├── test_app.py
+│   ├── test_cloud.py
+│   └── test_postgres_adapter.py
+├── API.md                  # 接口协议
+├── codestyle.md            # 代码规范
+└── README.md
+```
+
+## 快速开始
+
+### 环境要求
+
+- 本地基础模式：Python 3.9+，仅使用标准库。
+- Windows 部署及完整测试：Python 3.12 或 3.13。
+- 前端：配套前端仓库和现代浏览器。
+
+### 获取代码与本地启动
 
 ```powershell
+git clone https://github.com/Remisuki/832401321_calculator_backend.git
+cd 832401321_calculator_backend
 python app.py
 ```
 
-默认监听 `127.0.0.1:5000`，数据库位于后端仓库的 `calculator.db`。首次启动自动建表。环境变量 `HOST`、`PORT`、`DATABASE_PATH`、`ALLOWED_ORIGINS` 可覆盖默认值；默认允许 `http://localhost:5500` 和 `http://127.0.0.1:5500`。
+默认监听 `127.0.0.1:5000`。访问 <http://localhost:5000/api/health>，正常响应为：
 
-随后在前端目录运行 `python -m http.server 5500 --bind 127.0.0.1`，打开 <http://localhost:5500/>。更详细的本地操作见 [LOCAL_GUIDE.md](LOCAL_GUIDE.md)。
-
-## Windows 公网首次安装
-
-已有 `C:\Calculator` 的服务器不要重复运行首次安装脚本。正常启动、停止和重启使用后文的计划任务命令。
-
-1. 准备 Windows Server、管理员 PowerShell 5.1+、Python 3.12 或 3.13；在腾讯云防火墙/安全组允许入站 TCP 8080。是否有其他网站或备案要求，按实际服务器地域与云平台要求确认。
-2. 运行 `py -0p` 确认实际 Python 路径。下方使用本次服务器的路径；迁移到新机器时需按实际修改。
-3. 确认 8080 没有其他监听程序，且 Windows 防火墙服务可用。标准脚本会添加 Windows 防火墙规则；若服务被禁用，应先由服务器管理员确认策略，不要盲目启停系统服务或重装。
-4. 在服务器管理员 PowerShell 中执行：
-
-```powershell
-$ErrorActionPreference = "Stop"
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-New-Item -ItemType Directory -Path "C:\CalculatorSetup" -Force | Out-Null
-Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/Remisuki/832401321_calculator_backend/main/install-windows.ps1" -OutFile "C:\CalculatorSetup\install-windows.ps1"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\CalculatorSetup\install-windows.ps1" -PublicIp "193.112.23.200" -PythonExe "C:\Users\Administrator\AppData\Local\Programs\Python\Python313\python.exe" -Port 8080
+```json
+{"status":"ok"}
 ```
 
-安装脚本下载两个仓库的 main 分支，创建独立虚拟环境，安装 Flask、Waitress、psycopg，配置文件权限，执行测试，然后配置后台计划任务和本机健康检查。LOCAL SERVICE 对程序有读取权限，对 data/logs 有修改权限。
+首次启动会自动创建后端目录下的 `calculator.db` 和数据表，无需手工建库。
 
-本次服务器原有 Nginx 占用 80，所以使用 8080。安装在防火墙阶段遇到错误 1753，经查询确认 `MpsSvc` 已被禁用；保留既有服务策略，用恢复脚本完成剩余计划任务步骤后恢复运行。这是本次机器的实际处置记录，不表示首次安装脚本可以忽略所有防火墙错误。
+在配套前端仓库目录启动静态服务：
 
-## 配置、前后端连接与数据库初始化
+```powershell
+python -m http.server 5500 --bind 127.0.0.1
+```
+
+访问 <http://localhost:5500/>。前端默认连接 `http://localhost:5000/api`。
+
+### 本地配置
+
+`app.py` 读取以下环境变量：
+
+| 变量 | 默认值 | 含义 |
+|---|---|---|
+| `HOST` | `127.0.0.1` | 监听地址 |
+| `PORT` | `5000` | 监听端口 |
+| `DATABASE_PATH` | 后端目录下的 `calculator.db` | SQLite 文件路径 |
+| `ALLOWED_ORIGINS` | `http://localhost:5500,http://127.0.0.1:5500` | 允许的浏览器来源，逗号分隔 |
+
+## Windows Server 部署
+
+### 部署环境
+
+当前在线演示使用腾讯云 Windows Server、Python 3.13、Flask、Waitress 和 SQLite，监听 TCP 8080：
+
+**<http://193.112.23.200:8080/>**
+
+部署目录约定如下：
 
 ```text
 C:\Calculator\
-├── backend\
-├── frontend\
-├── venv\
-├── data\calculator.db
-├── logs\server.log
-└── settings.json
+├── backend\                # 后端仓库内容
+├── frontend\               # 前端仓库内容
+├── venv\                   # Python 虚拟环境
+├── data\calculator.db      # 数据库
+├── logs\server.log         # 日志
+└── settings.json           # 部署配置
 ```
 
-当前 `settings.json` 内容：
+### 安装依赖
+
+将两个仓库内容分别放入对应目录，在 `C:\Calculator` 下执行：
+
+```powershell
+py -3.13 -m venv venv
+& ".\venv\Scripts\python.exe" -m pip install "Flask==3.1.3" "waitress==3.0.2" "psycopg[binary]==3.3.6"
+New-Item -ItemType Directory -Path ".\data", ".\logs" -Force | Out-Null
+```
+
+使用 Python 3.12 时，将启动器参数改为 `-3.12`。`psycopg` 是当前 API 模块的导入依赖；Windows 入口实际注入 SQLite 存储实现，不需要 PostgreSQL 连接配置。
+
+### 配置与启动
+
+在部署根目录创建 `settings.json`：
 
 ```json
 {
@@ -92,97 +153,142 @@ C:\Calculator\
 }
 ```
 
-`public_origin` 是协议、IP 和端口，不包含路径。修改 IP/端口时同步更新此配置及云防火墙/系统防火墙规则，再重启计划任务。来源校验不是用户认证。
+`public_origin` 应与实际访问地址的协议、主机和端口一致，不包含路径。迁移部署时需更新该值，并在服务器及云平台网络规则中允许对应端口。
 
-`windows_server.py` 从上级部署目录读取配置，提供首页和允许的静态文件，并动态返回 `/config.js`，让前端使用 `window.location.origin + '/api'`，超时为 15 秒。仓库中的前端 `config.js` 仍可保留本地开发地址。
-
-首次启动执行 `CREATE TABLE IF NOT EXISTS`，不需要手工建库或 MySQL 服务。数据库表为 `calculation_history`：
-
-| 字段 | SQLite 类型 | 含义 |
-|---|---|---|
-| id | INTEGER PRIMARY KEY AUTOINCREMENT | 记录标识 |
-| expression | TEXT NOT NULL | 规范化后的表达式 |
-| result | TEXT NOT NULL | 十进制结果字符串 |
-| created_at | TEXT NOT NULL | UTC ISO 8601 时间 |
-
-结果使用文本保存与返回，避免前端再次转换浮点数。插入和删除使用参数绑定与事务；分页按 ID 倒序。数据库保存在代码目录之外，普通进程重启不会主动清空历史；删除服务器磁盘或数据库文件仍会丢失数据。修改部署前应备份数据库，不能用“重装”代替排错。
-
-## 后台启动、停止与排错
-
-下列命令在服务器管理员 PowerShell 执行：
+启动服务：
 
 ```powershell
-# 启动已注册的任务
-Start-ScheduledTask -TaskName "CalculatorHomework"
-
-# 查看状态与接口
-Get-ScheduledTask -TaskName "CalculatorHomework" | Format-Table TaskName, State
-Invoke-RestMethod "http://127.0.0.1:8080/api/health"
-
-# 查看日志
-Get-Content "C:\Calculator\logs\server.log" -Tail 50
+& ".\venv\Scripts\python.exe" ".\backend\windows_server.py"
 ```
 
-停止服务：
+该命令在当前终端运行。持续部署可使用 Windows 计划任务；当前演示站的任务名为 `CalculatorHomework`，以 LOCAL SERVICE 账号运行，并配置开机触发。运行账号需要读取程序与 Python 环境，以及写入 data、logs 目录的权限。
+
+针对全新环境，也可使用仓库内的 [install-windows.ps1](install-windows.ps1) 自动安装。脚本支持 `-PublicIp`、`-PythonExe`、`-Port` 参数，需要管理员 PowerShell 5.1+；已有安装使用服务管理方式维护，不重复执行首次安装。
+
+### 前后端连接
+
+Windows 入口动态提供 `/config.js`：
+
+```javascript
+window.CALCULATOR_CONFIG = Object.freeze({
+  apiBaseUrl: window.location.origin + '/api',
+  requestTimeoutMs: 15000
+});
+```
+
+静态页面和 API 共用公网入口，前端仓库中的本地开发配置不影响这一配置。代码和职责仍按前后端分离，表达式计算全部在后端完成。
+
+### 服务管理
+
+以下命令适用于已注册的 `CalculatorHomework` 任务：
 
 ```powershell
+# 启动
+Start-ScheduledTask -TaskName "CalculatorHomework"
+
+# 状态
+Get-ScheduledTask -TaskName "CalculatorHomework" | Format-Table TaskName, State
+
+# 健康检查
+Invoke-RestMethod "http://127.0.0.1:8080/api/health"
+
+# 日志
+Get-Content "C:\Calculator\logs\server.log" -Tail 50
+
+# 停止
 Stop-ScheduledTask -TaskName "CalculatorHomework"
 ```
 
-需要重启时，在停止后确认 8080 监听已退出，再启动任务：
+数据库保存在代码目录之外。更新代码前应备份数据库；更新 GitHub 文件不会自动同步到服务器。
 
-```powershell
-Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
-Start-ScheduledTask -TaskName "CalculatorHomework"
+## API 概览
+
+公网 API 基地址：`http://193.112.23.200:8080/api`。
+
+| 方法 | 路径 | 功能 | 成功状态 |
+|---|---|---|---|
+| GET | `/health` | 健康检查 | 200 |
+| POST | `/calculate` | 计算并保存成功记录 | 201 |
+| GET | `/history?limit=5&offset=0` | 分页查询历史 | 200 |
+| DELETE | `/history/{id}` | 删除指定记录 | 200 |
+
+计算请求：
+
+```json
+{"expression":"(1+2)*3"}
 ```
 
-计划任务配置了开机触发与失败重试，退出远程桌面不等于关闭服务器。修改 GitHub 不会自动更新服务器代码；本次仅更新文档时无需重启服务。
+成功响应示例：
 
-| 问题 | 排查重点 |
-|---|---|
-| 找不到 Python | 用 `py -0p` 确认路径，并传入 `-PythonExe` |
-| 端口被占用 | 检查占用程序；通过 `-Port` 选择空闲端口，不随意结束其他服务 |
-| 防火墙 1753 | 查询 `BFE`、`MpsSvc`、`RpcSs`；保留安装目录，定位服务状态 |
-| 计划任务未运行 | 用 `Get-ScheduledTaskInfo` 查看结果，并查看 `server.log` 与 Python/数据库目录权限 |
-| 本机成功，公网失败 | 核对腾讯云入站 TCP 8080、系统防火墙、访问地址中的端口 |
-| 403 | `public_origin` 必须与访问网页的实际来源一致 |
+```json
+{
+  "success": true,
+  "id": 1,
+  "expression": "(1+2)*3",
+  "result": "9",
+  "created_at": "2026-10-02T03:00:00+00:00"
+}
+```
 
-## API
+ID 和时间以实际响应为准。结果使用字符串，避免浏览器再次进行浮点转换。只有计算和数据库提交均成功，接口才返回 201。
 
-| 方法 | 路径 | 正常响应 |
+错误响应包含 `success`、`code` 和 `message`。常用错误状态包括：输入错误 400、来源不允许 403、记录不存在 404、请求体过大 413、媒体类型错误 415、数据库异常 500。完整协议见 [API.md](API.md)。
+
+## 数据库
+
+启动时通过 `CREATE TABLE IF NOT EXISTS` 自动初始化 `calculation_history` 表：
+
+| 字段 | SQLite 类型 | 说明 |
 |---|---|---|
-| GET | `/api/health` | 200，`{"status":"ok"}` |
-| POST | `/api/calculate` | 201，成功记录 |
-| GET | `/api/history?limit=5&offset=0` | 200，records/total/limit/offset |
-| DELETE | `/api/history/{id}` | 200，`{"success":true}` |
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | 记录标识 |
+| `expression` | TEXT NOT NULL | 规范化表达式 |
+| `result` | TEXT NOT NULL | 十进制结果字符串 |
+| `created_at` | TEXT NOT NULL | UTC ISO 8601 时间 |
 
-请求示例：`{"expression":"(1+2)*3"}`。成功返回 `success`、`id`、`expression`、字符串 `result` 与 `created_at`。非法表达式或除零返回 400；错误来源 403；不存在的记录 404；请求过大 413；错误媒体类型 415；数据库异常 500。完整字段见 [API.md](API.md)；当前公网 API 基地址为 `http://193.112.23.200:8080/api`。
+写操作使用事务和参数化 SQL。历史按 ID 倒序查询，总数和当前页在同一读事务中获取。删除操作检查实际影响行数，不存在的记录返回 404。
 
-只有计算和数据库提交都成功才返回 201。请求超时不等于保存失败，应先查询历史，再决定是否重新提交。
+## 计算规则与边界
 
-## 测试及验证范围
+- 语法支持十进制数字、`+ - * / ( )` 和一元正负号；同时接受 `×`、`÷`、`−`。
+- 解析层次为 `expression → term → factor`，分别处理加减、乘除和括号/一元运算。
+- 表达式最长 200 个字符，递归深度阈值为 40。
+- Decimal 精度为 28 位有效数字，数值绝对值上限为 `1e100`。
+- 不提供通用代码执行或无限精度计算。
+- 计算失败不写入成功历史；保存失败不返回成功结果。
 
-本地基础测试：
+## 测试
+
+仅运行本地基础测试：
 
 ```powershell
 python -m unittest tests.test_app -v
 ```
 
-Windows 公网环境中运行全部测试：
+使用 Python 3.12 或 3.13，在后端仓库目录安装完整测试依赖并运行：
 
 ```powershell
-Set-Location "C:\Calculator\backend"
-& "C:\Calculator\venv\Scripts\python.exe" -m unittest discover -s tests -v
+python -m pip install "Flask==3.1.3" "psycopg[binary]==3.3.6" "waitress==3.0.2"
+python -m unittest discover -s tests -v
 ```
 
-新建 Windows 测试环境时安装 `Flask==3.1.3`、`psycopg[binary]==3.3.6`、`waitress==3.0.2`。不要在 Windows 上照搬旧文档的 Gunicorn 启动命令。
+测试覆盖表达式计算、HTTP 输入校验、错误响应、分页与删除、历史保留、来源限制和存储适配器边界。测试使用临时数据库；PostgreSQL 适配器测试使用替身连接，不要求外部 PostgreSQL 服务。
 
-- 部署终端显示 40 项测试通过，以及 Windows 入口检查通过；这发生在后续防火墙步骤报错之前。
-- 2026-10-02 公网浏览器验证通过：四则运算、小数、括号、优先级、正负号、非法输入、除零、重新打开浏览器后的历史、指定删除及刷新、分页、接口请求不可达时不产生新结果和手机布局。
-- 本地隔离环境验证了 Waitress 进程实际重启后的历史保留。公网验收没有重启远程服务器，也没有连接真实 PostgreSQL；不能将这两项写成已完成的云端测试。
+功能验收示例：
 
-测试使用隔离数据，公网截图验证只删除本次创建的测试记录。`/api/health` 成功只能证明接口响应，不能代替数据库读写和删除验证。
+| 输入或操作 | 预期结果 |
+|---|---|
+| `1+2*3` | `7` |
+| `(1+2)*3` | `9` |
+| `3*-2` | `-6` |
+| `0.1+0.2` | `0.3` |
+| `1/0`、`1+` | 400 错误响应 |
+| 新浏览器会话读取历史 | 已保存记录仍可查询 |
+| 删除后重新查询 | 目标记录不存在 |
 
-## 项目边界
+健康检查不替代数据库读写验收。实际部署还需验证公网访问、后台运行及进程重启后的历史保留。
 
-该版本是匿名课程演示，所有访问者共用历史，未提供账号、个人历史隔离、科学计算或 HTTPS。数据库、日志、虚拟环境和私密配置不上传到 GitHub。代码规范及来源见 [codestyle.md](codestyle.md)。评阅期间应保持服务可访问，并关注课程公告。
+## 项目范围
+
+当前版本是匿名课程演示，访问者共享历史记录，未提供账号鉴权、个人历史隔离或 HTTPS。浏览器来源校验不等于身份认证。数据库、日志、虚拟环境及私密配置不提交到仓库。
+
+代码规范及来源见 [codestyle.md](codestyle.md)。仓库保留的 PostgreSQL 与其他平台部署材料属于可选方案，当前在线实例以本 README 描述的 Windows + SQLite 配置为准。
